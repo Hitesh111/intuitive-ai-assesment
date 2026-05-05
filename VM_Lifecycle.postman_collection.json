@@ -1,0 +1,664 @@
+{
+  "info": {
+    "name": "VM Lifecycle API",
+    "_postman_id": "vm-lifecycle-collection-v2",
+    "description": "Full lifecycle flow for the OpenStack VM management API with JWT authentication.\n\n📦 IMPORT BOTH FILES:\n  • VM_Lifecycle.postman_collection.json  (this file)\n  • VM_Lifecycle.postman_environment.json (environment variables)\n\nDefault credentials (pre-filled in environment):\n  username : admin\n  password : Admin@1234\n\nFlow order:\n  0a. Login          → auto-saves access_token + refresh_token\n  0b. Refresh Token  → (optional) get a new access token\n  1.  Provision VM   → auto-saves vm_id\n  2.  List VMs\n  3.  Retrieve VM\n  4.  Stop VM\n  5.  Start VM\n  6.  Reboot VM\n  7.  Delete VM\n  8.  Provision VM (Validation Error — 400)\n  9.  Retrieve Non-existent VM (404)\n  10. Start Active VM (409 Conflict)\n  11. Unauthenticated Request (401)\n\nFirst-time setup:\n  1. Import VM_Lifecycle.postman_environment.json and select it as active environment.\n  2. Run request '0a · Login' — tokens are saved automatically.\n  3. Run all other requests in order.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "vm_id",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated after Provision VM request"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated after Login request"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated after Login request, used to get a new access token"
+    }
+  ],
+  "item": [
+    {
+      "name": "0a · Login (Get JWT Token)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response contains access and refresh tokens\", function () {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('access');",
+              "    pm.expect(json).to.have.property('refresh');",
+              "    pm.collectionVariables.set('access_token', json.access);",
+              "    pm.collectionVariables.set('refresh_token', json.refresh);",
+              "    console.log('JWT access token saved.');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/login/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login",
+            ""
+          ]
+        },
+        "description": "Obtain a JWT access + refresh token pair. Run this first.\n\nUpdate the body with your Django user credentials.\nCreate one with: python manage.py createsuperuser\n\nThe test script automatically saves tokens to collection variables."
+      },
+      "response": []
+    },
+    {
+      "name": "0b · Refresh Access Token",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"New access token returned\", function () {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('access');",
+              "    pm.collectionVariables.set('access_token', json.access);",
+              "    console.log('Access token refreshed.');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/auth/refresh/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "refresh",
+            ""
+          ]
+        },
+        "description": "Use the refresh token to get a new access token when the current one expires (after 1 hour). The refresh token is valid for 7 days."
+      },
+      "response": []
+    },
+    {
+      "name": "1 · Provision VM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 201 Created\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "",
+              "pm.test(\"Response has id and status\", function () {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('id');",
+              "    pm.expect(json).to.have.property('status');",
+              "    pm.collectionVariables.set('vm_id', String(json.id));",
+              "    console.log('vm_id set to:', json.id);",
+              "});",
+              "",
+              "pm.test(\"VM status is ACTIVE or BUILDING\", function () {",
+              "    const s = pm.response.json().status;",
+              "    pm.expect(['ACTIVE', 'BUILDING']).to.include(s);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"postman-test-vm\",\n  \"image_id\": \"img-ubuntu-22.04\",\n  \"flavor_id\": \"m1.small\",\n  \"network_id\": \"net-private\",\n  \"key_name\": \"postman-key\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            ""
+          ]
+        },
+        "description": "Provision a new VM. Requires Bearer token.\nThe `vm_id` collection variable is automatically set from the response."
+      },
+      "response": []
+    },
+    {
+      "name": "2 · List All VMs",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response is an array\", function () {",
+              "    pm.expect(pm.response.json()).to.be.an('array');",
+              "});",
+              "",
+              "pm.test(\"At least one VM exists\", function () {",
+              "    pm.expect(pm.response.json().length).to.be.above(0);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            ""
+          ]
+        },
+        "description": "Returns a list of all VM instances with their current status."
+      },
+      "response": []
+    },
+    {
+      "name": "3 · Retrieve VM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"Response includes action history\", function () {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('actions');",
+              "    pm.expect(json.actions).to.be.an('array');",
+              "});",
+              "",
+              "pm.test(\"VM id matches requested id\", function () {",
+              "    const json = pm.response.json();",
+              "    pm.expect(String(json.id)).to.eql(pm.collectionVariables.get('vm_id'));",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/{{vm_id}}/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            "{{vm_id}}",
+            ""
+          ]
+        },
+        "description": "Retrieves a single VM by ID including its full action audit log."
+      },
+      "response": []
+    },
+    {
+      "name": "4 · Stop VM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"VM status is STOPPED\", function () {",
+              "    pm.expect(pm.response.json().status).to.eql('STOPPED');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/{{vm_id}}/stop/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            "{{vm_id}}",
+            "stop",
+            ""
+          ]
+        },
+        "description": "Stops a running VM. Requires VM to be in ACTIVE state (otherwise 409). Logs a STOP action."
+      },
+      "response": []
+    },
+    {
+      "name": "5 · Start VM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"VM status is ACTIVE\", function () {",
+              "    pm.expect(pm.response.json().status).to.eql('ACTIVE');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/{{vm_id}}/start/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            "{{vm_id}}",
+            "start",
+            ""
+          ]
+        },
+        "description": "Starts a stopped VM. Requires VM to be in STOPPED state (otherwise 409). Logs a START action."
+      },
+      "response": []
+    },
+    {
+      "name": "6 · Reboot VM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 200 OK\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test(\"VM status is ACTIVE after reboot\", function () {",
+              "    pm.expect(pm.response.json().status).to.eql('ACTIVE');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/{{vm_id}}/reboot/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            "{{vm_id}}",
+            "reboot",
+            ""
+          ]
+        },
+        "description": "Reboots a running VM. Requires VM to be ACTIVE. Logs a REBOOT action."
+      },
+      "response": []
+    },
+    {
+      "name": "7 · Delete VM",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 204 No Content\", function () {",
+              "    pm.response.to.have.status(204);",
+              "});",
+              "",
+              "pm.collectionVariables.set('vm_id', '');"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/{{vm_id}}/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            "{{vm_id}}",
+            ""
+          ]
+        },
+        "description": "Permanently deletes the VM. Returns 204 No Content. Clears `vm_id` variable."
+      },
+      "response": []
+    },
+    {
+      "name": "8 · Provision VM (Validation Error — 400)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 400 Bad Request\", function () {",
+              "    pm.response.to.have.status(400);",
+              "});",
+              "",
+              "pm.test(\"Error response has validation details\", function () {",
+              "    pm.expect(pm.response.json()).to.be.an('object');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"\",\n  \"image_id\": \"\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            ""
+          ]
+        },
+        "description": "Negative test: empty/incomplete payload. Expects 400 validation error."
+      },
+      "response": []
+    },
+    {
+      "name": "9 · Retrieve Non-existent VM (404)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 404 Not Found\", function () {",
+              "    pm.response.to.have.status(404);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/99999/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            "99999",
+            ""
+          ]
+        },
+        "description": "Negative test: VM ID that does not exist. Expects 404 Not Found."
+      },
+      "response": []
+    },
+    {
+      "name": "10 · Start Active VM (409 Conflict)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 409 Conflict\", function () {",
+              "    pm.response.to.have.status(409);",
+              "});",
+              "",
+              "pm.test(\"Error message explains invalid transition\", function () {",
+              "    const json = pm.response.json();",
+              "    pm.expect(json).to.have.property('detail');",
+              "    pm.expect(json.detail).to.include('START');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/{{vm_id}}/start/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            "{{vm_id}}",
+            "start",
+            ""
+          ]
+        },
+        "description": "Negative test: try to start a VM that is already ACTIVE. Expects 409 Conflict with descriptive error."
+      },
+      "response": []
+    },
+    {
+      "name": "11 · Unauthenticated Request (401)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status is 401 Unauthorized\", function () {",
+              "    pm.response.to.have.status(401);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/v1/vms/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "vms",
+            ""
+          ]
+        },
+        "description": "Negative test: request without Authorization header. Expects 401 Unauthorized."
+      },
+      "response": []
+    }
+  ]
+}
