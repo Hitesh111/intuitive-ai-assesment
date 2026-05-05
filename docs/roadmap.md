@@ -29,7 +29,6 @@
 - Audit export and retention policies (GDPR / SOC2 compliance).
 
 ## Phase 5 (Operations & Observability)
-- Prometheus metrics — latency histograms, error rates, queue depth.
-- Distributed tracing via OpenTelemetry.
-- Alerting on failed lifecycle actions.
-- Blue/green deployment + automated rollback strategy.
+- Track key metrics in production — request latency, error rates, and how long VM operations take.
+- Set up alerts to notify the team when lifecycle actions fail repeatedly.
+- Implement a deployment pipeline with automated rollback so bad releases can be reverted without manual intervention.
